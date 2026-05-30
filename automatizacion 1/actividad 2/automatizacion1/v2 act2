@@ -1,0 +1,101 @@
+#! /bin/bash
+
+# ------------ Confiniguration ------------
+
+UMBRAL_DISCO=90
+UMBRAL_RAM=85
+UMBRAL_CPU=80
+
+LOG_DIR="./var/logs"
+TMP_DIR="./tmp"
+INTERVAL=5
+LOG_BASE=="${LOG_BASE:-/var/logs/monitor}"
+MAX_LOGS=5
+
+#Forzamos locale a C para evitar problemas con la salida de los comandos
+export LC_ALL=C
+
+#------------Utilidades------------
+
+log(){
+    local FECHAS_HORA
+    FECHA_HORA=$(date +"%Y-%m-%d %H:%M:%S")
+    local LOG_HOY="${LOG_BASE}-$(date +"%Y-%m-%d").log"
+    echo "[$FECHA_HORA] $1" >> "$LOG_HOY"
+}
+rotar_logs(){
+    local LOG_HOY="${LOG_BASE}-$(date +"%Y-%m-%d").log"
+    if [ -f "$LOG_HOY" ]; then
+        local COUNT=1
+        while [ -f "${LOG_HOY}.${COUNT}" ]; do
+            COUNT=$((COUNT + 1))
+        done
+        if [ $COUNT -gt $MAX_LOGS ]; then
+            rm -f "${LOG_HOY}.$((COUNT - MAX_LOGS))"
+        fi
+        mv "$LOG_HOY" "${LOG_HOY}.1"
+    fi
+}
+#------------Limpiar logs antiguos------------
+limpiar_tmp(){
+    local count=0
+    while IFS= read -r file; do
+        if [ -f "$file" ]; then
+            rm -f "$file"
+            count=$((count + 1))
+        fi
+    done < <(find "$TMP_DIR" -type f)
+    echo "Se han eliminado $count archivos temporales."
+}
+
+limpiar_logs(){
+    local count=0
+    while IFS= read -r file; do
+        if [ -f "$file" ]; then
+            rm -f "$file"
+            count=$((count + 1))
+        fi
+    done < <(find "$LOG_DIR" -type f)
+    echo "Se han eliminado $count archivos de log."
+}
+
+#------------Monitoreo------------
+revisar_disco(){
+    local USO_DISCO
+    USO_DISCO=$(df -h / | awk 'NR==2 {print $5}' | sed 's/%//')
+    if [ "$USO_DISCO" -ge "$UMBRAL_DISCO" ]; then
+        log "ALERTA: Uso de disco en $USO_DISCO% supera el umbral de $UMBRAL_DISCO%"
+    fi
+}
+revisar_ram(){
+    local USO_RAM
+    USO_RAM=$(free | awk '/Mem/ {printf("%.0f"), $3/$2 * 100}')
+    if [ "$USO_RAM" -ge "$UMBRAL_RAM" ]; then
+        log "ALERTA: Uso de RAM en $USO_RAM% supera el umbral de $UMBRAL_RAM%"
+    fi
+}
+revisar_cpu(){
+    local USO_CPU
+    USO_CPU=$(top -bn1 | grep "Cpu(s)" | awk '{print $2 + $4}' | cut -d. -f1)
+    if [ "$USO_CPU" -ge "$UMBRAL_CPU" ]; then
+        log "ALERTA: Uso de CPU en $USO_CPU% supera el umbral de $UMBRAL_CPU%"
+    fi
+}
+
+#------------manejo de señales------------
+trap "echo 'Recibida señal de terminación, limpiando...'; limpiar_tmp; limpiar_logs; exit 0" SIGINT SIGTERM
+
+
+#------------Main Loop------------
+main(){
+    rotar_logs
+    limpiar_tmp
+    limpiar_logs
+    while true; do
+        revisar_disco
+        revisar_ram
+        revisar_cpu
+        sleep "$INTERVAL"
+    done
+}
+main
