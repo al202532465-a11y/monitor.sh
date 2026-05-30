@@ -1,0 +1,19 @@
+#!/bin/bash
+
+directorio=$(ls ../)
+peso=$(df -h | grep root  awk '{print $5}' | sed 's/%//g')
+
+echo "El directorio contiene: $directorio"
+echo "El peso del disco es: $peso%"
+
+#----------------------------
+
+if (($peso > 5)); then
+    mkdir primer_carpeta
+    touch primer_carpeta/primer_archivo.txt
+    echo $directorio > primer_carpeta/primer_archivo.txt
+
+else 
+    echo "Sin espacio suficiente"
+fi
+"primer_script.sh" 22L, 319B
